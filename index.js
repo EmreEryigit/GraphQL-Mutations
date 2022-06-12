@@ -1,8 +1,8 @@
-const {ApolloServer, gql} = require('apollo-server');
 
+const {GraphQLServer, PubSub} = require("graphql-yoga")
 const {events, users,participants,locations} = require('./data');
 
-const typeDefs = gql`
+const typeDefs = `
     type Event {
         id: ID
         title: String
@@ -110,8 +110,34 @@ const typeDefs = gql`
         participants: [Participant]    
         participant(id: ID): Participant
     }
+
+    type Subscription {
+        userCreated: User
+        eventCreated: Event
+        participantCreated: Participant
+    }
 `
 const resolvers = {
+    Subscription : {
+        userCreated: {
+            subscribe: (parent, args , {pubsub}) => {
+                
+                return pubsub.asyncIterator("userCreated")
+            }
+        },
+        eventCreated: {
+            subscribe: (parent, args , {pubsub}) => {
+                
+                return pubsub.asyncIterator("eventCreated")
+            }
+        },
+        participantCreated: {
+            subscribe: (parent, args , {pubsub}) => {
+                
+                return pubsub.asyncIterator("participantCreated")
+            }
+        }  
+    },
     Query: {
         events: () => events,
         event: (parent, args) => events.find(event => event.id == args.id),
@@ -127,15 +153,17 @@ const resolvers = {
 
     },
     Mutation: {
-        createUser: (parent, { data }) => {
+        createUser: (parent, { data }, {pubsub}) => {
             
             const newUser = {...data, id: Math.random()}
             users.push(newUser)
+            pubsub.publish("userCreated", {userCreated: newUser})
             return newUser
         },
-        createEvent: (parent, {data}) => {
+        createEvent: (parent, {data}, {pubsub}) => {
             const newEvent = {...data, id: Math.random()}
             events.push(newEvent)
+            pubsub.publish("eventCreated", {eventCreated: newEvent})
             return newEvent
         },
         createLocation: (parent, {data}) => {
@@ -143,9 +171,10 @@ const resolvers = {
             locations.push(newLocation)
             return newLocation
         },
-        createParticipant: (parent, {data}) => {
+        createParticipant: (parent, {data}, {pubsub}) => {
             const newParticipant = {...data, id: Math.random()}
             participants.push(newParticipant)
+            pubsub.publish("participantCreated", {participantCreated: newParticipant})
             return newParticipant
         },
         updateUser: (parent, {data, id}) => {
@@ -220,6 +249,13 @@ const resolvers = {
     }
    
 }
-const server = new ApolloServer({typeDefs, resolvers});
 
-server .listen().then(({url}) => console.log('Server is running on ' + url));
+
+const pubsub = new PubSub()
+const server = new GraphQLServer({
+    typeDefs, 
+    resolvers, 
+    context: {pubsub}
+})
+server.start(() => console.log("Server is running on 4000!"))
+
